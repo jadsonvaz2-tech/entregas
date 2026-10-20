@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#123b2a"><link rel="manifest" href="manifest.json">
+<title>Scanner de Entregas</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><h1>📦 Scanner de Entregas</h1><p>Funciona no celular · dados salvos neste aparelho</p></header>
+<main>
+<section class="stats"><div><b id="total">0</b><span>Pacotes</span></div><div><b id="stops">0</b><span>Endereços</span></div><div><b id="review">0</b><span>Conferir</span></div></section>
+<section class="panel">
+<h2>1. Escanear código de barras</h2>
+<p class="hint">Permita o acesso à câmera. A leitura de código depende do navegador e do aparelho.</p>
+<video id="video" playsinline muted></video>
+<div class="actions"><button id="startCam">Abrir câmera</button><button class="secondary" id="stopCam">Parar câmera</button></div>
+<p id="scanStatus" class="hint">Câmera desligada.</p>
+</section>
+<section class="panel">
+<h2>2. Adicionar ou corrigir pacote</h2>
+<form id="packageForm">
+<label>Código do pacote (opcional)<input id="code" autocomplete="off" placeholder="Escaneado ou digitado"></label>
+<label>Endereço completo *<textarea id="address" required rows="2" placeholder="Rua, número, complemento, bairro, cidade, CEP"></textarea></label>
+<label>Número escrito à caneta (opcional)<input id="handNo" placeholder="Ex.: 27"></label>
+<div class="actions"><button type="submit">Salvar pacote</button><button type="button" class="secondary" id="clearForm">Limpar</button></div>
+</form>
+<p class="hint">Dica: use o leitor de código para preencher o código; confira o endereço antes de salvar. OCR automático de texto será integrado na próxima etapa.</p>
+</section>
+<section class="panel">
+<h2>3. Pacotes do dia</h2>
+<input id="search" placeholder="Buscar por endereço ou código">
+<div class="actions"><button id="exportCSV">Exportar CSV para planilha</button><button id="exportGrouped" class="secondary">Exportar endereços agrupados</button></div>
+<div class="actions"><button id="exportJSON" class="secondary">Backup JSON</button><button id="clearDay" class="danger">Apagar dia</button></div>
+<div id="list"></div>
+</section>
+</main>
+<footer>Protótipo inicial · revise todos os endereços antes de importar no Spoke/Circuit.</footer>
+<script src="app.js"></script>
+</body></html>

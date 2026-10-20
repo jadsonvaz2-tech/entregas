@@ -1,0 +1,9 @@
+{
+  "name": "Scanner de Entregas",
+  "short_name": "Scanner Entregas",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f6f4",
+  "theme_color": "#123b2a",
+  "description": "Cadastro offline de pacotes e exportação CSV"
+}
