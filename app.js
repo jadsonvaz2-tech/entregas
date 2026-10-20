@@ -24,3 +24,18 @@ async function scanLoop(){if(!scanning||!detector)return;try{const codes=await d
 $('stopCam').onclick=()=>{scanning=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('video').style.display='none';$('scanStatus').textContent='Câmera desligada.'};
 if('serviceWorker'in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 render();
+let ocrWorker = null;
+
+async function prepararOCR() {
+  if (ocrWorker) return ocrWorker;
+
+  if (!window.Tesseract) {
+    throw new Error("Biblioteca OCR não carregada.");
+  }
+
+  ocrWorker = await Tesseract.createWorker("por", 1, {
+  workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
+  langPath: "https://tessdata.projectnaptha.com/4.0.0",
+  corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5"
+  });
+}
