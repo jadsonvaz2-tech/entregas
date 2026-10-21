@@ -433,13 +433,16 @@ async function scanLoop() {
           .map(l => l.trim())
           .filter(l => l.length >= 8);
 
-        const candidato = linhas.find(l =>
-          /\b(rua|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|cep)\b/i.test(l) ||
-          /\b\d{5}-?\d{3}\b/.test(l)
-        );
+        
+const candidato = linhas.find(l =>
+  /\b(rua|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|logradouro|cep|bairro|residencial|condom[ií]nio|praça|praca)\b/i.test(l) ||
+  /\b\d{5}-?\d{3}\b/.test(l) ||
+  /\b(nº|n°|número|numero|bloco|apto|apartamento|casa)\b/i.test(l)
+);
 
-        if (candidato) {
-          // Não preencher automaticamente o endereço.
+if (candidato) {
+  // Não preencher automaticamente o endereço.
+
           $('scanStatus').textContent =
             'Possível endereço: ' + candidato +
             '. Confira e preencha manualmente.';
