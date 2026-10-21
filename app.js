@@ -162,10 +162,28 @@ async function scanLoop(){
 
     reconhecerTextoDaEtiqueta()
       .then(texto=>{
-        if(texto&&!$('address').value.trim()){
-          $('address').value=texto;
-          $('scanStatus').textContent='Texto reconhecido. Confira e corrija o endereço antes de salvar.';
-        }else if(!texto){
+        
+if(texto&&!$('address').value.trim()){
+  const linhas=texto
+    .split(/\n/)
+    .map(l=>l.trim())
+    .filter(l=>l.length>=8);
+
+  const candidato=linhas.find(l=>
+    /\b(rua|r\.|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|logradouro|cep)\b/i.test(l)
+    || /\b\d{5}-?\d{3}\b/.test(l)
+  );
+
+  if(candidato){
+    $('address').value=candidato;
+    $('scanStatus').textContent='Possível endereço reconhecido. Confira antes de salvar.';
+  }else{
+    $('scanStatus').textContent='Texto detectado, mas não parece um endereço. Aproxime e foque a etiqueta.';
+  }
+}else if(!texto){
+  $('scanStatus').textContent='OCR não encontrou texto. Aproxime e foque a etiqueta.';
+}
+
           $('scanStatus').textContent='OCR não encontrou texto. Aproxime e foque a etiqueta.';
         }
       })
