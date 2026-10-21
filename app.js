@@ -21,44 +21,54 @@ $('exportJSON').onclick=()=>download('backup_entregas_'+new Date().toISOString()
 $('clearDay').onclick=()=>{if(confirm('Apagar todos os pacotes deste dia? Faça um backup antes, se necessário.')){packages=[];save()}};
 $('startCam').onclick=async()=>{try{if(!('BarcodeDetector'in window)){ $('scanStatus').textContent='Este navegador não oferece leitura de código nativa. Use o campo Código ou teste Chrome atualizado.';return}detector=new BarcodeDetector();stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;$('video').style.display='block';await $('video').play();scanning=true;$('scanStatus').textContent='Aponte para o código de barras.';scanLoop()}catch(err){$('scanStatus').textContent='Não foi possível abrir a câmera. Verifique a permissão e use uma página HTTPS.'}};
 
+
 let ultimaTentativaOCR = 0;
 let ocrEmAndamento = false;
+let ultimoCodigoLido = '';
+let ocrFalhou = false;
 
 async function scanLoop() {
   if (!scanning || !detector) return;
 
   try {
-    const video = $('video');
-    const codes = await detector.detect(video);
+    const codes = await detector.detect($('video'));
 
-    if (codes.length) {
-      $('code').value = codes[0].rawValue;
+    if (codes.length && codes[0].rawValue !== ultimoCodigoLido) {
+      ultimoCodigoLido = codes[0].rawValue;
+      $('code').value = ultimoCodigoLido;
       $('scanStatus').textContent =
-        'Código lido. Mantenha a etiqueta na câmera para reconhecer o texto.';
+        'Código lido. Tentando reconhecer o texto da etiqueta...';
     }
   } catch (e) {}
 
   const agora = Date.now();
 
   if (
+    !ocrFalhou &&
     agora - ultimaTentativaOCR >= 2500 &&
     !ocrEmAndamento &&
     !$('address').value.trim()
   ) {
     ultimaTentativaOCR = agora;
     ocrEmAndamento = true;
+    $('scanStatus').textContent =
+      'Carregando OCR. Mantenha a etiqueta visível e aguarde...';
 
     reconhecerTextoDaEtiqueta()
       .then(texto => {
         if (texto && !$('address').value.trim()) {
           $('address').value = texto;
           $('scanStatus').textContent =
-            'Texto reconhecido. Confira e corrija o endereço antes de salvar.';
+            'Texto reconhecido. Confira o endereço antes de salvar.';
+        } else if (!texto) {
+          $('scanStatus').textContent =
+            'OCR não encontrou texto. Aproxime e foque a etiqueta.';
         }
       })
       .catch(erro => {
+        ocrFalhou = true;
         $('scanStatus').textContent =
-          'Não foi possível reconhecer o texto. Confira a conexão e tente novamente.';
+          'Erro no OCR: ' + (erro.message || String(erro));
       })
       .finally(() => {
         ocrEmAndamento = false;
@@ -66,6 +76,7 @@ async function scanLoop() {
   }
 
   if (scanning) requestAnimationFrame(scanLoop);
+
 }
 $('stopCam').onclick=()=>{scanning=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('video').style.display='none';$('scanStatus').textContent='Câmera desligada.'};
 if('serviceWorker'in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
