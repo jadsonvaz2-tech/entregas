@@ -101,98 +101,41 @@ async function prepararOCR(){
   return ocrWorker;
 }
 
-async function reconhecerTextoDaEtiqueta(){
-  const video=$('video');
-  if(!video||!video.videoWidth||!video.videoHeight)return '';
-  const canvas=document.createElement('canvas');
-  canvas.width=video.videoWidth;
-  canvas.height=video.videoHeight;
-  const context=canvas.getContext('2d');
-  if(!context)throw new Error('Não foi possível preparar a imagem da câmera.');
-  context.drawImage(video,0,0,canvas.width,canvas.height);
-  const worker=await prepararOCR();
-  const resultado=await worker.recognize(canvas);
-  return (resultado.data.text||'').trim();
-}
-
-$('startCam').onclick=async()=>{
-  try{
-    if(!('BarcodeDetector'in window)){
-      $('scanStatus').textContent='Este navegador não oferece leitura de código nativa. Use o campo Código ou teste Chrome atualizado.';
+reconhecerTextoDaEtiqueta()
+  .then(texto => {
+    if (!texto) {
+      $('scanStatus').textContent =
+        'OCR não encontrou texto. Aproxime e foque a etiqueta.';
       return;
     }
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
-      $('scanStatus').textContent='Câmera indisponível neste navegador. Abra o app por uma página HTTPS.';
-      return;
+
+    const linhas = texto
+      .split(/\n/)
+      .map(l => l.trim())
+      .filter(l => l.length >= 8);
+
+    const candidato = linhas.find(l =>
+      /\b(rua|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|cep)\b/i.test(l)
+      || /\b\d{5}-?\d{3}\b/.test(l)
+    );
+
+    if (candidato) {
+      $('scanStatus').textContent =
+        'Possível endereço: ' + candidato +
+        '. Confira antes de preencher.';
+    } else {
+      $('scanStatus').textContent =
+        'Texto lido, mas endereço não confirmado. Aproxime a etiqueta.';
     }
-    if(stream)stream.getTracks().forEach(t=>t.stop());
-    detector=new BarcodeDetector();
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
-    $('video').srcObject=stream;
-    $('video').style.display='block';
-    await $('video').play();
-    scanning=true;
-    ocrFalhou=false;
-    ultimaTentativaOCR=0;
-    ultimoCodigoLido='';
-    $('scanStatus').textContent='Câmera aberta. Aponte para a etiqueta e aguarde o OCR.';
-    scanLoop();
-  }catch(err){
-    $('scanStatus').textContent='Não foi possível abrir a câmera. Verifique a permissão e use uma página HTTPS.';
-  }
-};
-
-async function scanLoop(){
-  if(!scanning||!detector)return;
-
-  try{
-    const codes=await detector.detect($('video'));
-    if(codes.length&&codes[0].rawValue!==ultimoCodigoLido){
-      ultimoCodigoLido=codes[0].rawValue;
-      $('code').value=ultimoCodigoLido;
-      if(!$('address').value.trim())$('scanStatus').textContent='Código lido. Tentando reconhecer o texto da etiqueta...';
-    }
-  }catch(e){}
-
-  const agora=Date.now();
-  if(!ocrFalhou&&agora-ultimaTentativaOCR>=2500&&!ocrEmAndamento&&!$('address').value.trim()){
-    ultimaTentativaOCR=agora;
-    ocrEmAndamento=true;
-    $('scanStatus').textContent='Carregando OCR. Mantenha a etiqueta visível e aguarde...';
-
-    reconhecerTextoDaEtiqueta()
-      .then(texto=>{
-        
-if(texto&&!$('address').value.trim()){
-  const linhas=texto
-    .split(/\n/)
-    .map(l=>l.trim())
-    .filter(l=>l.length>=8);
-
-  const candidato=linhas.find(l=>
-    /\b(rua|r\.|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|logradouro|cep)\b/i.test(l)
-    || /\b\d{5}-?\d{3}\b/.test(l)
-  );
-
-  if(candidato){
-    $('address').value=candidato;
-    $('scanStatus').textContent='Possível endereço reconhecido. Confira antes de salvar.';
-  }else{
-    $('scanStatus').textContent='Texto detectado, mas não parece um endereço. Aproxime e foque a etiqueta.';
-  }
-}else if(!texto){
-  $('scanStatus').textContent='OCR não encontrou texto. Aproxime e foque a etiqueta.';
-}
-
-          $('scanStatus').textContent='OCR não encontrou texto. Aproxime e foque a etiqueta.';
-        }
-      })
-      .catch(erro=>{
-        ocrFalhou=true;
-        $('scanStatus').textContent='Erro no OCR: '+(erro.message||String(erro));
-      })
-      .finally(()=>{ocrEmAndamento=false});
-  }
+  })
+  .catch(erro => {
+    ocrFalhou = true;
+    $('scanStatus').textContent =
+      'Erro no OCR: ' + (erro.message || String(erro));
+  })
+  .finally(() => {
+    ocrEmAndamento = false;
+  });
 
   if(scanning)requestAnimationFrame(scanLoop);
 }
