@@ -20,7 +20,53 @@ $('exportGrouped').onclick=()=>{const g=grouped();if(!g.length)return alert('Adi
 $('exportJSON').onclick=()=>download('backup_entregas_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify({exportedAt:new Date().toISOString(),packages},null,2),'application/json');
 $('clearDay').onclick=()=>{if(confirm('Apagar todos os pacotes deste dia? Faça um backup antes, se necessário.')){packages=[];save()}};
 $('startCam').onclick=async()=>{try{if(!('BarcodeDetector'in window)){ $('scanStatus').textContent='Este navegador não oferece leitura de código nativa. Use o campo Código ou teste Chrome atualizado.';return}detector=new BarcodeDetector();stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;$('video').style.display='block';await $('video').play();scanning=true;$('scanStatus').textContent='Aponte para o código de barras.';scanLoop()}catch(err){$('scanStatus').textContent='Não foi possível abrir a câmera. Verifique a permissão e use uma página HTTPS.'}};
-async function scanLoop(){if(!scanning||!detector)return;try{const codes=await detector.detect($('video'));if(codes.length){$('code').value=codes[0].rawValue;$('scanStatus').textContent='Código lido. Confira o endereço e toque em Salvar pacote.';scanning=false;return}}catch(e){}requestAnimationFrame(scanLoop)}
+
+let ultimaTentativaOCR = 0;
+let ocrEmAndamento = false;
+
+async function scanLoop() {
+  if (!scanning || !detector) return;
+
+  try {
+    const video = $('video');
+    const codes = await detector.detect(video);
+
+    if (codes.length) {
+      $('code').value = codes[0].rawValue;
+      $('scanStatus').textContent =
+        'Código lido. Mantenha a etiqueta na câmera para reconhecer o texto.';
+    }
+  } catch (e) {}
+
+  const agora = Date.now();
+
+  if (
+    agora - ultimaTentativaOCR >= 2500 &&
+    !ocrEmAndamento &&
+    !$('address').value.trim()
+  ) {
+    ultimaTentativaOCR = agora;
+    ocrEmAndamento = true;
+
+    reconhecerTextoDaEtiqueta()
+      .then(texto => {
+        if (texto && !$('address').value.trim()) {
+          $('address').value = texto;
+          $('scanStatus').textContent =
+            'Texto reconhecido. Confira e corrija o endereço antes de salvar.';
+        }
+      })
+      .catch(erro => {
+        $('scanStatus').textContent =
+          'Não foi possível reconhecer o texto. Confira a conexão e tente novamente.';
+      })
+      .finally(() => {
+        ocrEmAndamento = false;
+      });
+  }
+
+  if (scanning) requestAnimationFrame(scanLoop);
+}
 $('stopCam').onclick=()=>{scanning=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('video').style.display='none';$('scanStatus').textContent='Câmera desligada.'};
 if('serviceWorker'in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 render();
@@ -32,6 +78,26 @@ async function prepararOCR() {
   if (!window.Tesseract) {
     throw new Error("Biblioteca OCR não carregada.");
   }
+
+async function reconhecerTextoDaEtiqueta() {
+  const video = $('video');
+
+  if (!video || !video.videoWidth || !video.videoHeight) {
+    return '';
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const context = canvas.getContext('2d');
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const worker = await prepararOCR();
+  const resultado = await worker.recognize(canvas);
+
+  return resultado.data.text.trim();
+}
 
   ocrWorker = await Tesseract.createWorker("por", 1, {
     workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
