@@ -298,6 +298,7 @@ async function prepararOCR() {
   return ocrWorker;
 }
 
+
 async function reconhecerTextoDaEtiqueta() {
   const video = $('video');
 
@@ -305,10 +306,11 @@ async function reconhecerTextoDaEtiqueta() {
     return '';
   }
 
+  const escala = 2;
   const canvas = document.createElement('canvas');
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth * escala;
+  canvas.height = video.videoHeight * escala;
 
   const context = canvas.getContext('2d');
 
@@ -324,11 +326,39 @@ async function reconhecerTextoDaEtiqueta() {
     canvas.height
   );
 
+  const imagem = context.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const pixels = imagem.data;
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const cinza =
+      0.299 * pixels[i] +
+      0.587 * pixels[i + 1] +
+      0.114 * pixels[i + 2];
+
+    const ajustado = Math.max(
+      0,
+      Math.min(255, (cinza - 128) * 1.35 + 128)
+    );
+
+    pixels[i] = ajustado;
+    pixels[i + 1] = ajustado;
+    pixels[i + 2] = ajustado;
+  }
+
+  context.putImageData(imagem, 0, 0);
+
   const worker = await prepararOCR();
   const resultado = await worker.recognize(canvas);
 
   return (resultado.data.text || '').trim();
 }
+
 
 // Botão para abrir a câmera
 $('startCam').onclick = async () => {
