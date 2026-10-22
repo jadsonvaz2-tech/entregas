@@ -5,6 +5,10 @@ let packages = JSON.parse(localStorage.getItem(KEY) || '[]');
 let stream = null;
 let detector = null;
 let scanning = false;
+let ocrWorker = null;
+let ocrEmAndamento = false;
+let ultimaTentativaOCR = 0;
+let ultimoCodigoLido = '';
 
 const $ = id => document.getElementById(id);
 
@@ -27,12 +31,14 @@ function grouped() {
 
   for (const p of packages) {
     const k = norm(p.address);
+    if (!k) continue;
 
     if (!m.has(k)) {
       m.set(k, {
         address: p.address,
         count: 0,
         codes: [],
+        manualNumbers: [],
         items: []
       });
     }
@@ -41,7 +47,7 @@ function grouped() {
     g.count++;
 
     if (p.code) g.codes.push(p.code);
-
+    if (p.handNo) g.manualNumbers.push(p.handNo);
     g.items.push(p);
   }
 
@@ -66,15 +72,12 @@ function render() {
 
   const q = norm($('search').value);
   const list = $('list');
-
   list.innerHTML = '';
 
   const shown = packages
-    .filter(p =>
-      !q || norm(
-        p.address + ' ' + p.code + ' ' + p.handNo
-      ).includes(q)
-    )
+    .filter(p => !q || norm(
+      [p.address, p.code, p.handNo].join(' ')
+    ).includes(q))
     .slice()
     .reverse();
 
@@ -86,25 +89,20 @@ function render() {
 
   for (const p of shown) {
     const d = document.createElement('div');
-
     d.className = 'item';
 
     d.innerHTML = `
-      <strong>${esc(p.address)}</strong>
+      <strong>${esc(p.address || 'Endereço pendente')}</strong>
       <small>
-        Pacote ${esc(p.code || 'sem código')}
-        · Numeração manual: ${esc(p.handNo || '—')}
+        Código: ${esc(p.code || 'não lido')}
+        · Número à caneta: ${esc(p.handNo || '—')}
       </small>
       ${p.review
         ? '<span class="pill">Conferir endereço</span>'
         : ''}
       <div>
-        <button class="secondary" data-edit="${p.id}">
-          Editar
-        </button>
-        <button class="danger" data-del="${p.id}">
-          Excluir
-        </button>
+        <button class="secondary" data-edit="${p.id}">Editar</button>
+        <button class="danger" data-del="${p.id}">Excluir</button>
       </div>
     `;
 
@@ -116,25 +114,27 @@ $('packageForm').addEventListener('submit', e => {
   e.preventDefault();
 
   const address = $('address').value.trim();
-
-  if (!address) return;
-
   const code = $('code').value.trim();
+  const handNo = $('handNo').value.trim();
 
-  const duplicate = code &&
-    packages.some(p => p.code === code);
+  if (!address) {
+    alert('Confira e preencha o endereço antes de salvar.');
+    $('address').focus();
+    return;
+  }
 
-  if (
-    duplicate &&
-    !confirm('Este código já existe. Salvar mesmo assim?')
-  ) return;
+  if (code && packages.some(p => p.code === code)) {
+    if (!confirm('Este código já existe. Salvar mesmo assim?')) {
+      return;
+    }
+  }
 
   packages.push({
     id: Date.now().toString(36) +
-      Math.random().toString(36).slice(2, 6),
+      Math.random().toString(36).slice(2, 7),
     code,
     address,
-    handNo: $('handNo').value.trim(),
+    handNo,
     review: address.length < 12,
     created: new Date().toISOString()
   });
@@ -152,11 +152,9 @@ $('search').oninput = render;
 
 $('list').onclick = e => {
   const id = e.target.dataset.edit || e.target.dataset.del;
-
   if (!id) return;
 
   const p = packages.find(x => x.id === id);
-
   if (!p) return;
 
   if (e.target.dataset.del) {
@@ -167,16 +165,13 @@ $('list').onclick = e => {
     return;
   }
 
-  const a = prompt('Corrigir endereço:', p.address);
+  const a = prompt('Corrigir endereço:', p.address || '');
   if (a === null) return;
 
   const c = prompt('Código do pacote:', p.code || '');
   if (c === null) return;
 
-  const n = prompt(
-    'Numeração escrita à caneta:',
-    p.handNo || ''
-  );
+  const n = prompt('Numeração escrita à caneta:', p.handNo || '');
   if (n === null) return;
 
   p.address = a.trim();
@@ -196,7 +191,7 @@ function download(name, content, type) {
   a.download = name;
   a.click();
 
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function csv(rows) {
@@ -227,7 +222,7 @@ $('exportGrouped').onclick = () => {
   const g = grouped();
 
   if (!g.length) {
-    alert('Adicione pacotes antes de exportar.');
+    alert('Adicione pacotes com endereço antes de exportar.');
     return;
   }
 
@@ -235,11 +230,12 @@ $('exportGrouped').onclick = () => {
     'enderecos_agrupados_' +
       new Date().toISOString().slice(0, 10) + '.csv',
     csv([
-      ['Address', 'PackageCount', 'PackageCodes'],
+      ['Address', 'PackageCount', 'PackageCodes', 'ManualNumbers'],
       ...g.map(x => [
         x.address,
         x.count,
-        x.codes.join(' | ')
+        x.codes.join(' | '),
+        x.manualNumbers.join(' | ')
       ])
     ]),
     'text/csv;charset=utf-8'
@@ -259,25 +255,13 @@ $('exportJSON').onclick = () => {
 };
 
 $('clearDay').onclick = () => {
-  if (
-    confirm(
-      'Apagar todos os pacotes deste dia? Faça um backup antes, se necessário.'
-    )
-  ) {
+  if (confirm('Apagar todos os pacotes deste dia? Faça um backup antes.')) {
     packages = [];
     save();
   }
 };
 
-// ================================
 // OCR E CÂMERA
-// ================================
-
-let ultimaTentativaOCR = 0;
-let ocrEmAndamento = false;
-let ultimoCodigoLido = '';
-let ocrFalhou = false;
-let ocrWorker = null;
 
 async function prepararOCR() {
   if (ocrWorker) return ocrWorker;
@@ -298,6 +282,47 @@ async function prepararOCR() {
   return ocrWorker;
 }
 
+function melhorarImagem(video, contraste) {
+  const escala = 2;
+  const canvas = document.createElement('canvas');
+
+  canvas.width = video.videoWidth * escala;
+  canvas.height = video.videoHeight * escala;
+
+  const ctx = canvas.getContext('2d', {
+    willReadFrequently: true
+  });
+
+  if (!ctx) {
+    throw new Error('Não foi possível preparar a imagem.');
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const img = ctx.getImageData(
+    0, 0, canvas.width, canvas.height
+  );
+  const px = img.data;
+
+  for (let i = 0; i < px.length; i += 4) {
+    const gray =
+      0.299 * px[i] +
+      0.587 * px[i + 1] +
+      0.114 * px[i + 2];
+
+    const adjusted = Math.max(
+      0,
+      Math.min(255, (gray - 128) * contraste + 128)
+    );
+
+    px[i] = adjusted;
+    px[i + 1] = adjusted;
+    px[i + 2] = adjusted;
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
 
 async function reconhecerTextoDaEtiqueta() {
   const video = $('video');
@@ -306,61 +331,47 @@ async function reconhecerTextoDaEtiqueta() {
     return '';
   }
 
-  const escala = 2;
-  const canvas = document.createElement('canvas');
-
-  canvas.width = video.videoWidth * escala;
-  canvas.height = video.videoHeight * escala;
-
-  const context = canvas.getContext('2d');
-
-  if (!context) {
-    throw new Error('Não foi possível preparar a imagem.');
-  }
-
-  context.drawImage(
-    video,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
-  const imagem = context.getImageData(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
-  const pixels = imagem.data;
-
-  for (let i = 0; i < pixels.length; i += 4) {
-    const cinza =
-      0.299 * pixels[i] +
-      0.587 * pixels[i + 1] +
-      0.114 * pixels[i + 2];
-
-    const ajustado = Math.max(
-      0,
-      Math.min(255, (cinza - 128) * 1.35 + 128)
-    );
-
-    pixels[i] = ajustado;
-    pixels[i + 1] = ajustado;
-    pixels[i + 2] = ajustado;
-  }
-
-  context.putImageData(imagem, 0, 0);
-
   const worker = await prepararOCR();
-  const resultado = await worker.recognize(canvas);
 
-  return (resultado.data.text || '').trim();
+  const imagem1 = melhorarImagem(video, 1.25);
+  const resultado1 = await worker.recognize(imagem1);
+  const texto1 = (resultado1.data.text || '').trim();
+
+  if (texto1.length >= 35) return texto1;
+
+  const imagem2 = melhorarImagem(video, 1.65);
+  const resultado2 = await worker.recognize(imagem2);
+  const texto2 = (resultado2.data.text || '').trim();
+
+  return texto2.length > texto1.length ? texto2 : texto1;
 }
 
+function encontrarEndereco(texto) {
+  const linhas = texto
+    .split(/\n/)
+    .map(l => l.replace(/\s+/g, ' ').trim())
+    .filter(l => l.length >= 5);
 
-// Botão para abrir a câmera
+  const padraoRua =
+    /\b(rua|r\.|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|praça|praca|logradouro)\b/i;
+
+  const indice = linhas.findIndex(l => padraoRua.test(l));
+
+  if (indice < 0) return '';
+
+  const partes = [linhas[indice]];
+
+  if (
+    linhas[indice + 1] &&
+    linhas[indice + 1].length <= 55 &&
+    !padraoRua.test(linhas[indice + 1])
+  ) {
+    partes.push(linhas[indice + 1]);
+  }
+
+  return partes.join(', ').slice(0, 180);
+}
+
 $('startCam').onclick = async () => {
   try {
     if (
@@ -376,7 +387,6 @@ $('startCam').onclick = async () => {
       stream.getTracks().forEach(t => t.stop());
     }
 
-    // A câmera pode funcionar mesmo sem leitor nativo de códigos.
     detector = null;
 
     if ('BarcodeDetector' in window) {
@@ -394,11 +404,9 @@ $('startCam').onclick = async () => {
 
     $('video').srcObject = stream;
     $('video').style.display = 'block';
-
     await $('video').play();
 
     scanning = true;
-    ocrFalhou = false;
     ocrEmAndamento = false;
     ultimaTentativaOCR = 0;
     ultimoCodigoLido = '';
@@ -409,44 +417,37 @@ $('startCam').onclick = async () => {
     scanLoop();
   } catch (err) {
     $('scanStatus').textContent =
-      'Erro ao abrir câmera: ' +
-      (err.message || String(err));
+      'Erro ao abrir câmera: ' + (err.message || String(err));
   }
 };
 
 async function scanLoop() {
   if (!scanning) return;
 
-  // Leitura do código de barras, quando disponível.
   if (detector) {
     try {
       const codes = await detector.detect($('video'));
 
-      if (
-        codes.length &&
-        codes[0].rawValue !== ultimoCodigoLido
-      ) {
+      if (codes.length && codes[0].rawValue !== ultimoCodigoLido) {
         ultimoCodigoLido = codes[0].rawValue;
         $('code').value = ultimoCodigoLido;
       }
     } catch (e) {
-      // A falha do leitor de código não interrompe o OCR.
+      // Falha no leitor não interrompe o OCR.
     }
   }
 
-  // Tenta reconhecer texto a cada quatro segundos.
   const agora = Date.now();
 
   if (
-    !ocrFalhou &&
-    agora - ultimaTentativaOCR >= 4000 &&
+    agora - ultimaTentativaOCR >= 5000 &&
     !ocrEmAndamento
   ) {
     ultimaTentativaOCR = agora;
     ocrEmAndamento = true;
 
     $('scanStatus').textContent =
-      'Tentando ler a etiqueta. Mantenha-a focada...';
+      'Lendo a etiqueta. Mantenha o texto focado...';
 
     reconhecerTextoDaEtiqueta()
       .then(texto => {
@@ -454,51 +455,35 @@ async function scanLoop() {
 
         if (!texto) {
           $('scanStatus').textContent =
-            'OCR não encontrou texto. Aproxime a etiqueta.';
+            'OCR não encontrou texto. Tente melhorar a iluminação.';
           return;
         }
 
-const linhas = texto
-  .split(/\n/)
-  .map(l => l.trim())
-  .filter(l => l.length >= 8);
+        const endereco = encontrarEndereco(texto);
 
-$('scanStatus').textContent =
-  'Texto OCR: ' + texto.slice(0, 400);
-        
-const candidato = linhas.find(l =>
-  /\b(rua|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|logradouro|cep|bairro|residencial|condom[ií]nio|praça|praca)\b/i.test(l) ||
-  /\b\d{5}-?\d{3}\b/.test(l) ||
-  /\b(nº|n°|número|numero|bloco|apto|apartamento|casa)\b/i.test(l)
-);
-
-if (candidato) {
-  // Não preencher automaticamente o endereço.
-
-          $('scanStatus').textContent =
-            'Possível endereço: ' + candidato +
-            '. Confira e preencha manualmente.';
-        } else {
-          $('scanStatus').textContent =
-            'Texto lido, mas endereço não confirmado.';
+        if (endereco && !$('address').value.trim()) {
+          $('address').value = endereco;
         }
+
+        $('scanStatus').textContent = endereco
+          ? 'Possível endereço: ' + endereco +
+            '. Confira antes de salvar. Texto OCR: ' +
+            texto.slice(0, 220)
+          : 'Endereço não identificado. Texto OCR: ' +
+            texto.slice(0, 300);
       })
-      .catch(erro => {
-        ocrFalhou = true;
+      .catch(err => {
         $('scanStatus').textContent =
-          'Erro no OCR: ' + (erro.message || String(erro));
+          'Erro no OCR: ' + (err.message || String(err));
       })
       .finally(() => {
         ocrEmAndamento = false;
       });
   }
 
-  if (scanning) {
-    requestAnimationFrame(scanLoop);
-  }
+  if (scanning) requestAnimationFrame(scanLoop);
 }
 
-// Botão para desligar a câmera
 $('stopCam').onclick = () => {
   scanning = false;
 
@@ -508,13 +493,11 @@ $('stopCam').onclick = () => {
 
   stream = null;
   detector = null;
-
   $('video').srcObject = null;
   $('video').style.display = 'none';
   $('scanStatus').textContent = 'Câmera desligada.';
 };
 
-// Registro do modo offline
 if (
   'serviceWorker' in navigator &&
   location.protocol.startsWith('http')
