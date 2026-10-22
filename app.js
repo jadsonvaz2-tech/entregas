@@ -324,6 +324,7 @@ function melhorarImagem(video, contraste) {
   return canvas;
 }
 
+
 async function reconhecerTextoDaEtiqueta() {
   const video = $('video');
 
@@ -333,18 +334,57 @@ async function reconhecerTextoDaEtiqueta() {
 
   const worker = await prepararOCR();
 
-  const imagem1 = melhorarImagem(video, 1.25);
-  const resultado1 = await worker.recognize(imagem1);
-  const texto1 = (resultado1.data.text || '').trim();
+  const canvas = document.createElement('canvas');
+  const escala = 3;
 
-  if (texto1.length >= 35) return texto1;
+  canvas.width = video.videoWidth * escala;
+  canvas.height = video.videoHeight * escala;
 
-  const imagem2 = melhorarImagem(video, 1.65);
-  const resultado2 = await worker.recognize(imagem2);
-  const texto2 = (resultado2.data.text || '').trim();
+  const ctx = canvas.getContext('2d', {
+    willReadFrequently: true
+  });
 
-  return texto2.length > texto1.length ? texto2 : texto1;
+  if (!ctx) {
+    throw new Error('Não foi possível preparar a imagem.');
+  }
+
+  ctx.drawImage(
+    video,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const imagem = ctx.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const px = imagem.data;
+
+  for (let i = 0; i < px.length; i += 4) {
+    const cinza =
+      0.299 * px[i] +
+      0.587 * px[i + 1] +
+      0.114 * px[i + 2];
+
+    const ajustado = cinza < 165 ? 0 : 255;
+
+    px[i] = ajustado;
+    px[i + 1] = ajustado;
+    px[i + 2] = ajustado;
+  }
+
+  ctx.putImageData(imagem, 0, 0);
+
+  const resultado = await worker.recognize(canvas);
+
+  return (resultado.data.text || '').trim();
 }
+
 
 function encontrarEndereco(texto) {
   const linhas = texto
