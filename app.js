@@ -458,11 +458,13 @@ async function scanLoop() {
           return;
         }
 
-        const linhas = texto
-          .split(/\n/)
-          .map(l => l.trim())
-          .filter(l => l.length >= 8);
-console.log('TEXTO OCR:', texto);
+const linhas = texto
+  .split(/\n/)
+  .map(l => l.trim())
+  .filter(l => l.length >= 8);
+
+$('scanStatus').textContent =
+  'Texto OCR: ' + texto.slice(0, 400);
         
 const candidato = linhas.find(l =>
   /\b(rua|avenida|av\.|travessa|estrada|rodovia|alameda|servid[aã]o|logradouro|cep|bairro|residencial|condom[ií]nio|praça|praca)\b/i.test(l) ||
